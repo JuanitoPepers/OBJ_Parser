@@ -27,6 +27,7 @@ typedef struct{
     unsigned int     *illum; //
     float   *Ns;
     float   *Ni;
+    unsigned int mtl_idx;
     unsigned int nb_mtl; //number of materials
 }Materials;
 
@@ -112,37 +113,82 @@ void AddIllum(Materials *mlist, unsigned int illum) {
 
 
 
-Materials loadMTL(const char* MTL_path){
-    char line[256];
-    char line_clone[256];
+Materials loadMTL(const char* MTL_path) {
+    FILE *file = fopen(MTL_path, "r");
     Materials tmp;
-    FILE *file=fopen(MTL_path,"r");
-    if(file==NULL){printf("File '%s' not found\n",MTL_path);return tmp;}
+    
+    // Initialisation impérative à NULL/0 pour éviter les pointeurs fous
+    tmp.nb_mtl = 0;
+    tmp.mtl_name = NULL;
+    tmp.Ka = NULL;
+    tmp.Kd = NULL;
+    tmp.Ks = NULL;
+    tmp.Ns = NULL;
+    tmp.Ni = NULL;
+    tmp.illum = NULL;
 
-    Vec3 v3_buffer;
-    while (fgets(line,sizeof(line),file)!=NULL){
-        strcpy(line_clone,line);
-        char *syntax=strtok(line_clone," ");
-        if (!strcmp(syntax,"#")){
-            printf("Commentaire: %s\n",line+1);
+    if (file == NULL) {
+        printf("Error: File '%s' not found\n", MTL_path);
+        return tmp;
+    }
+
+    char line[256];
+    Vec3 v3_buf;
+    float f_buf;
+    unsigned int u_buf;
+
+    while (fgets(line, sizeof(line), file) != NULL) {
+        char *ptr = line;
+        while(*ptr == ' ' || *ptr == '\t') ptr++;
+        
+        if (*ptr == '#' || *ptr == '\n' || *ptr == '\r' || *ptr == '\0') 
             continue;
-        }else if (!strcmp(syntax,"newmtl")){
-            *(tmp.mtl_name)=strdup(line+7);
-            printf("Nom: %s\n",*(tmp.mtl_name));
-        }else if (!strcmp(syntax,"Ka")){
-            sscanf(line,"Ka %f %f %f",&v3_buffer.x,&v3_buffer.y,&v3_buffer.z);
-            AddKa(&tmp,v3_buffer);
-            printf("Ka %f %f %f\n",v3_buffer.x,v3_buffer.y,v3_buffer.z);
-        }else if (!strcmp(syntax,"Kd")){
-            sscanf(line,"Kd %f %f %f",&v3_buffer.x,&v3_buffer.y,&v3_buffer.z);
-            AddKd(&tmp,v3_buffer);
-            printf("Kd %f %f %f\n",v3_buffer.x,v3_buffer.y,v3_buffer.z);
-        }else if (!strcmp(syntax,"Ks")){
-            sscanf(line,"Kd %f %f %f",&v3_buffer.x,&v3_buffer.y,&v3_buffer.z);
-            AddKd(&tmp,v3_buffer);
-            printf("Kd %f %f %f\n",v3_buffer.x,v3_buffer.y,v3_buffer.z);
+
+        char syntax[32];
+        sscanf(ptr, "%s", syntax);
+
+        if (!strcmp(syntax, "newmtl")) {
+            tmp.nb_mtl++;
+            tmp.mtl_name = realloc(tmp.mtl_name, tmp.nb_mtl * sizeof(char*));
+            tmp.Ka = realloc(tmp.Ka, tmp.nb_mtl * sizeof(Vec3));
+            tmp.Kd = realloc(tmp.Kd, tmp.nb_mtl * sizeof(Vec3));
+            tmp.Ks = realloc(tmp.Ks, tmp.nb_mtl * sizeof(Vec3));
+            tmp.Ns = realloc(tmp.Ns, tmp.nb_mtl * sizeof(float));
+            tmp.Ni = realloc(tmp.Ni, tmp.nb_mtl * sizeof(float));
+            tmp.illum = realloc(tmp.illum, tmp.nb_mtl * sizeof(unsigned int));
+
+            char name_buf[128];
+            sscanf(ptr, "newmtl %s", name_buf);
+            tmp.mtl_name[tmp.nb_mtl - 1] = strdup(name_buf);
+            
+            printf("Material loaded: %s\n", name_buf);
+
+        } else if (tmp.nb_mtl > 0) { 
+            int idx = tmp.nb_mtl - 1;
+
+            if (!strcmp(syntax, "Ka")) {
+                sscanf(ptr, "Ka %f %f %f", &tmp.Ka[idx].x, &tmp.Ka[idx].y, &tmp.Ka[idx].z);
+                printf("Ka %f %f %f\n",tmp.Ka[idx].x, tmp.Ka[idx].y, tmp.Ka[idx].z);
+            } else if (!strcmp(syntax, "Kd")) {
+                sscanf(ptr, "Kd %f %f %f", &tmp.Kd[idx].x, &tmp.Kd[idx].y, &tmp.Kd[idx].z);
+                printf("Ka %f %f %f\n",tmp.Kd[idx].x, tmp.Kd[idx].y, tmp.Kd[idx].z);
+            } else if (!strcmp(syntax, "Ks")) {
+                sscanf(ptr, "Ks %f %f %f", &tmp.Ks[idx].x, &tmp.Ks[idx].y, &tmp.Ks[idx].z);
+                printf("Ka %f %f %f\n",tmp.Ks[idx].x, tmp.Ks[idx].y, tmp.Ks[idx].z);
+            } else if (!strcmp(syntax, "Ns")) {
+                sscanf(ptr, "Ns %f", &tmp.Ns[idx]);
+                printf("Ns %f\n",tmp.Ns[idx]);
+            } else if (!strcmp(syntax, "Ni")) {
+                sscanf(ptr, "Ni %f", &tmp.Ni[idx]);
+                printf("Ni %f\n",tmp.Ni[idx]);
+            } else if (!strcmp(syntax, "illum")) {
+                sscanf(ptr, "illum %d", &tmp.illum[idx]);
+                printf("illum %d\n",tmp.illum[idx]);
+            }
         }
     }
+
+    fclose(file);
     return tmp;
 }
 
@@ -179,6 +225,7 @@ Mesh loadOBJ(const char* OBJ_path){
     tmp.f.mtl_idx = 0;
     FILE *file=fopen(OBJ_path,"r");
     if (file==NULL){printf("File '%s' not found\n",OBJ_path);return tmp;}
+    printf("OBJ file found");
     Vec3 v3_buffer;
     Vec2 v2_buffer;
     int v_idx[3];
@@ -206,16 +253,16 @@ Mesh loadOBJ(const char* OBJ_path){
             sscanf(line,"vt %f %f %f",&v3_buffer.x,&v3_buffer.y,&v3_buffer.z);
             AddNormal(&tmp.v,v3_buffer);
             printf("vt %f %f %f\n",v3_buffer.x,v3_buffer.y,v3_buffer.z);
-        }else if (!strcmp(syntax,"usemtl")){
-            sscanf(line,"usemtl %s",mtl_path);
+        }else if (!strcmp(syntax,"mtllib")){
+            sscanf(line,"mtllib %s",mtl_path);
             path=strrchr(OBJ_path,'/');
             if (path){
                 strcpy(path+1,mtl_path);
-                //LoadMTL(path);
-                printf("usemtl %s\n",path);
+                loadMTL(path);
+                printf("mtllib %s\n",path);
             }else {
-                //LoadMTL(mtl_path);
-                printf("usemtl %s\n",mtl_path);
+                loadMTL(mtl_path);
+                printf("mtlib %s\n",mtl_path);
             }
         }else if (!strcmp(syntax,"f")){
             sscanf(line,"f %d/%d/%d %d/%d/%d %d/%d/%d",
